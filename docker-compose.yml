@@ -1,0 +1,37 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: zj-60071-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: db_zj_60071
+      POSTGRES_USER: dev
+      POSTGRES_PASSWORD: dev123456
+    ports:
+      - "15071:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - zj-60071-network
+
+  redis:
+    image: redis:7-alpine
+    container_name: zj-60071-redis
+    restart: unless-stopped
+    ports:
+      - "16371:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - zj-60071-network
+    command: redis-server --appendonly yes
+
+volumes:
+  postgres_data:
+  redis_data:
+
+networks:
+  zj-60071-network:
+    driver: bridge
