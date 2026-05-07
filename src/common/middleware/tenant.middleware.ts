@@ -1,4 +1,4 @@
-import { Injectable, NestMiddleware, UnauthorizedException } from '@nestjs/common';
+import { Injectable, NestMiddleware, UnauthorizedException, ForbiddenException } from '@nestjs/common';
 import { Request, Response, NextFunction } from 'express';
 import { JwtService } from '@nestjs/jwt';
 import { PrismaService } from '../prisma/prisma.service';
@@ -25,9 +25,7 @@ export class TenantMiddleware implements NestMiddleware {
             (req as any).tenantId = payload.tenantId;
           }
         }
-      } catch (e) {
-        // Token decode failed, proceed without tenantId
-      }
+      } catch (e) {}
     }
 
     const tenantCode = req.headers['x-tenant-code'] as string;
@@ -40,6 +38,33 @@ export class TenantMiddleware implements NestMiddleware {
       }
     }
 
+    const currentTenantId = (req as any).tenantId;
+    if (currentTenantId) {
+      this.validateTenantConsistency(req, currentTenantId);
+    }
+
     next();
+  }
+
+  private validateTenantConsistency(req: Request, currentTenantId: string): void {
+    const tenantIdsFromRequest: string[] = [];
+
+    if (req.params && req.params.tenantId) {
+      tenantIdsFromRequest.push(req.params.tenantId);
+    }
+
+    if (req.query && req.query.tenantId) {
+      tenantIdsFromRequest.push(req.query.tenantId as string);
+    }
+
+    if (req.body && req.body.tenantId) {
+      tenantIdsFromRequest.push(req.body.tenantId);
+    }
+
+    for (const tid of tenantIdsFromRequest) {
+      if (tid !== currentTenantId) {
+        throw new ForbiddenException('租户隔离校验失败，无权访问其他租户数据');
+      }
+    }
   }
 }

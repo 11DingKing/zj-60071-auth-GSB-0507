@@ -1,10 +1,16 @@
-import { Injectable, CanActivate, ExecutionContext, UnauthorizedException } from '@nestjs/common';
-import { Reflector } from '@nestjs/core';
-import { JwtService } from '@nestjs/jwt';
-import { Request } from 'express';
-import { IS_PUBLIC_KEY } from '../decorators/public.decorator';
-import { PrismaService } from '../prisma/prisma.service';
-import { RedisService } from '../redis/redis.service';
+import {
+  Injectable,
+  CanActivate,
+  ExecutionContext,
+  UnauthorizedException,
+} from "@nestjs/common";
+import { Reflector } from "@nestjs/core";
+import { JwtService } from "@nestjs/jwt";
+import { Request } from "express";
+import { IS_PUBLIC_KEY } from "../decorators/public.decorator";
+import { PrismaService } from "../prisma/prisma.service";
+import { RedisService } from "../redis/redis.service";
+import { PermissionCacheService } from "../utils/permission-cache.service";
 
 @Injectable()
 export class JwtAuthGuard implements CanActivate {
@@ -13,6 +19,7 @@ export class JwtAuthGuard implements CanActivate {
     private jwtService: JwtService,
     private prismaService: PrismaService,
     private redisService: RedisService,
+    private permissionCacheService: PermissionCacheService,
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
@@ -29,12 +36,12 @@ export class JwtAuthGuard implements CanActivate {
     const token = this.extractTokenFromHeader(request);
 
     if (!token) {
-      throw new UnauthorizedException('未提供认证令牌');
+      throw new UnauthorizedException("未提供认证令牌");
     }
 
     const isBlacklisted = await this.redisService.get(`blacklist:${token}`);
     if (isBlacklisted) {
-      throw new UnauthorizedException('令牌已失效');
+      throw new UnauthorizedException("令牌已失效");
     }
 
     try {
@@ -62,11 +69,11 @@ export class JwtAuthGuard implements CanActivate {
       });
 
       if (!user || !user.isEnabled) {
-        throw new UnauthorizedException('用户不存在或已禁用');
+        throw new UnauthorizedException("用户不存在或已禁用");
       }
 
       if (user.tenantId !== payload.tenantId) {
-        throw new UnauthorizedException('租户不匹配');
+        throw new UnauthorizedException("租户不匹配");
       }
 
       request.user = await this.buildUserPayload(user);
@@ -75,18 +82,23 @@ export class JwtAuthGuard implements CanActivate {
       if (e instanceof UnauthorizedException) {
         throw e;
       }
-      throw new UnauthorizedException('认证失败');
+      throw new UnauthorizedException("认证失败");
     }
 
     return true;
   }
 
   private extractTokenFromHeader(request: Request): string | undefined {
-    const [type, token] = request.headers.authorization?.split(' ') ?? [];
-    return type === 'Bearer' ? token : undefined;
+    const [type, token] = request.headers.authorization?.split(" ") ?? [];
+    return type === "Bearer" ? token : undefined;
   }
 
   private async buildUserPayload(user: any): Promise<any> {
+    const cached = await this.permissionCacheService.getCachedUserPayload(user.id);
+    if (cached) {
+      return cached;
+    }
+
     const roles = new Set<string>();
     const permissions = new Set<string>();
 
@@ -98,7 +110,7 @@ export class JwtAuthGuard implements CanActivate {
       }
     }
 
-    return {
+    const payload = {
       userId: user.id,
       tenantId: user.tenantId,
       username: user.username,
@@ -106,6 +118,10 @@ export class JwtAuthGuard implements CanActivate {
       roles: Array.from(roles),
       permissions: Array.from(permissions),
     };
+
+    await this.permissionCacheService.setCachedUserPayload(user.id, payload);
+
+    return payload;
   }
 
   private async collectRoleWithInheritance(
