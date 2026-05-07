@@ -1,10 +1,18 @@
-import { Injectable, CanActivate, ExecutionContext, UnauthorizedException } from '@nestjs/common';
-import { Reflector } from '@nestjs/core';
-import { JwtService } from '@nestjs/jwt';
-import { Request } from 'express';
-import { IS_PUBLIC_KEY } from '../decorators/public.decorator';
-import { PrismaService } from '../prisma/prisma.service';
-import { RedisService } from '../redis/redis.service';
+import {
+  Injectable,
+  CanActivate,
+  ExecutionContext,
+  UnauthorizedException,
+} from "@nestjs/common";
+import { Reflector } from "@nestjs/core";
+import { JwtService } from "@nestjs/jwt";
+import { Request } from "express";
+import { IS_PUBLIC_KEY } from "../decorators/public.decorator";
+import { PrismaService } from "../prisma/prisma.service";
+import { RedisService } from "../redis/redis.service";
+
+const PERMISSIONS_CACHE_KEY_PREFIX = "permissions:user:";
+const PERMISSIONS_CACHE_TTL = 15 * 60;
 
 @Injectable()
 export class JwtAuthGuard implements CanActivate {
@@ -29,12 +37,12 @@ export class JwtAuthGuard implements CanActivate {
     const token = this.extractTokenFromHeader(request);
 
     if (!token) {
-      throw new UnauthorizedException('未提供认证令牌');
+      throw new UnauthorizedException("未提供认证令牌");
     }
 
     const isBlacklisted = await this.redisService.get(`blacklist:${token}`);
     if (isBlacklisted) {
-      throw new UnauthorizedException('令牌已失效');
+      throw new UnauthorizedException("令牌已失效");
     }
 
     try {
@@ -42,48 +50,63 @@ export class JwtAuthGuard implements CanActivate {
         secret: process.env.JWT_ACCESS_SECRET,
       });
 
-      const user = await this.prismaService.user.findUnique({
-        where: { id: payload.userId },
-        include: {
-          userRoles: {
-            include: {
-              role: {
-                include: {
-                  rolePermissions: {
-                    include: {
-                      permission: true,
+      const cacheKey = `${PERMISSIONS_CACHE_KEY_PREFIX}${payload.userId}`;
+      const cachedUserPayload = await this.redisService.get(cacheKey);
+
+      let userPayload: any;
+      if (cachedUserPayload) {
+        userPayload = JSON.parse(cachedUserPayload);
+      } else {
+        const user = await this.prismaService.user.findUnique({
+          where: { id: payload.userId },
+          include: {
+            userRoles: {
+              include: {
+                role: {
+                  include: {
+                    rolePermissions: {
+                      include: {
+                        permission: true,
+                      },
                     },
                   },
                 },
               },
             },
           },
-        },
-      });
+        });
 
-      if (!user || !user.isEnabled) {
-        throw new UnauthorizedException('用户不存在或已禁用');
+        if (!user || !user.isEnabled) {
+          throw new UnauthorizedException("用户不存在或已禁用");
+        }
+
+        if (user.tenantId !== payload.tenantId) {
+          throw new UnauthorizedException("租户不匹配");
+        }
+
+        userPayload = await this.buildUserPayload(user);
+        await this.redisService.set(
+          cacheKey,
+          JSON.stringify(userPayload),
+          PERMISSIONS_CACHE_TTL,
+        );
       }
 
-      if (user.tenantId !== payload.tenantId) {
-        throw new UnauthorizedException('租户不匹配');
-      }
-
-      request.user = await this.buildUserPayload(user);
+      request.user = userPayload;
       request.token = token;
     } catch (e) {
       if (e instanceof UnauthorizedException) {
         throw e;
       }
-      throw new UnauthorizedException('认证失败');
+      throw new UnauthorizedException("认证失败");
     }
 
     return true;
   }
 
   private extractTokenFromHeader(request: Request): string | undefined {
-    const [type, token] = request.headers.authorization?.split(' ') ?? [];
-    return type === 'Bearer' ? token : undefined;
+    const [type, token] = request.headers.authorization?.split(" ") ?? [];
+    return type === "Bearer" ? token : undefined;
   }
 
   private async buildUserPayload(user: any): Promise<any> {
