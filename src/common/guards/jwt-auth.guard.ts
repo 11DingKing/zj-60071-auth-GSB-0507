@@ -3,7 +3,6 @@ import {
   CanActivate,
   ExecutionContext,
   UnauthorizedException,
-  ForbiddenException,
 } from "@nestjs/common";
 import { Reflector } from "@nestjs/core";
 import { JwtService } from "@nestjs/jwt";
@@ -93,7 +92,6 @@ export class JwtAuthGuard implements CanActivate {
         );
       }
 
-      this.validateTenantIsolation(request, userPayload.tenantId);
       request.user = userPayload;
       request.token = token;
     } catch (e) {
@@ -109,31 +107,6 @@ export class JwtAuthGuard implements CanActivate {
   private extractTokenFromHeader(request: Request): string | undefined {
     const [type, token] = request.headers.authorization?.split(" ") ?? [];
     return type === "Bearer" ? token : undefined;
-  }
-
-  private validateTenantIsolation(
-    request: Request,
-    userTenantId: string,
-  ): void {
-    const requestTenantId = (request as any).tenantId;
-    if (requestTenantId && requestTenantId !== userTenantId) {
-      throw new ForbiddenException("租户隔离校验失败");
-    }
-
-    const paramTenantId = (request.params as any)?.tenantId;
-    if (paramTenantId && paramTenantId !== userTenantId) {
-      throw new ForbiddenException("租户隔离校验失败");
-    }
-
-    const queryTenantId = (request.query as any)?.tenantId;
-    if (queryTenantId && queryTenantId !== userTenantId) {
-      throw new ForbiddenException("租户隔离校验失败");
-    }
-
-    const bodyTenantId = (request.body as any)?.tenantId;
-    if (bodyTenantId && bodyTenantId !== userTenantId) {
-      throw new ForbiddenException("租户隔离校验失败");
-    }
   }
 
   private async buildUserPayload(user: any): Promise<any> {

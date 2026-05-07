@@ -1,4 +1,4 @@
-import { Injectable, NestMiddleware, UnauthorizedException } from '@nestjs/common';
+import { Injectable, NestMiddleware, ForbiddenException } from '@nestjs/common';
 import { Request, Response, NextFunction } from 'express';
 import { JwtService } from '@nestjs/jwt';
 import { PrismaService } from '../prisma/prisma.service';
@@ -11,8 +11,9 @@ export class TenantMiddleware implements NestMiddleware {
   ) {}
 
   async use(req: Request, res: Response, next: NextFunction) {
-    const authHeader = req.headers.authorization;
+    let jwtTenantId: string | undefined;
 
+    const authHeader = req.headers.authorization;
     if (authHeader && authHeader.startsWith('Bearer ')) {
       const token = authHeader.substring(7);
       try {
@@ -22,7 +23,8 @@ export class TenantMiddleware implements NestMiddleware {
             where: { id: payload.tenantId },
           });
           if (tenant && tenant.isEnabled) {
-            (req as any).tenantId = payload.tenantId;
+            jwtTenantId = payload.tenantId;
+            (req as any).tenantId = jwtTenantId;
           }
         }
       } catch (e) {
@@ -40,6 +42,27 @@ export class TenantMiddleware implements NestMiddleware {
       }
     }
 
+    if (jwtTenantId) {
+      this.validateTenantIsolation(req, jwtTenantId);
+    }
+
     next();
+  }
+
+  private validateTenantIsolation(req: Request, jwtTenantId: string): void {
+    const paramTenantId = (req.params as any)?.tenantId;
+    if (paramTenantId && paramTenantId !== jwtTenantId) {
+      throw new ForbiddenException('租户隔离校验失败');
+    }
+
+    const queryTenantId = (req.query as any)?.tenantId;
+    if (queryTenantId && queryTenantId !== jwtTenantId) {
+      throw new ForbiddenException('租户隔离校验失败');
+    }
+
+    const bodyTenantId = (req.body as any)?.tenantId;
+    if (bodyTenantId && bodyTenantId !== jwtTenantId) {
+      throw new ForbiddenException('租户隔离校验失败');
+    }
   }
 }

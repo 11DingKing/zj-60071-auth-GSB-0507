@@ -8,8 +8,11 @@ import { Observable } from "rxjs";
 import { tap, catchError } from "rxjs/operators";
 import { PrismaService } from "../prisma/prisma.service";
 import { RedisService } from "../redis/redis.service";
-
-const PERMISSIONS_CACHE_KEY_PREFIX = "permissions:user:";
+import {
+  invalidateUserPermissionCache,
+  invalidateRolePermissionCache,
+  invalidatePermissionCache,
+} from "../utils/permission-cache.util";
 
 @Injectable()
 export class OperationLogInterceptor implements NestInterceptor {
@@ -96,17 +99,16 @@ export class OperationLogInterceptor implements NestInterceptor {
         if (body && body.roleIds !== undefined) {
           const userId = request.params.id;
           if (userId) {
-            await this.redisService.del(
-              `${PERMISSIONS_CACHE_KEY_PREFIX}${userId}`,
-            );
+            await invalidateUserPermissionCache(userId, this.redisService);
           }
         }
       }
 
       if (method === "POST" && /\/users$/.test(path)) {
         if (responseData && responseData.id) {
-          await this.redisService.del(
-            `${PERMISSIONS_CACHE_KEY_PREFIX}${responseData.id}`,
+          await invalidateUserPermissionCache(
+            responseData.id,
+            this.redisService,
           );
         }
       }
@@ -123,16 +125,11 @@ export class OperationLogInterceptor implements NestInterceptor {
         }
 
         if (roleId) {
-          const userRoles = await this.prismaService.userRole.findMany({
-            where: { roleId },
-            select: { userId: true },
-          });
-
-          for (const ur of userRoles) {
-            await this.redisService.del(
-              `${PERMISSIONS_CACHE_KEY_PREFIX}${ur.userId}`,
-            );
-          }
+          await invalidateRolePermissionCache(
+            roleId,
+            this.prismaService,
+            this.redisService,
+          );
         }
       }
 
@@ -148,25 +145,11 @@ export class OperationLogInterceptor implements NestInterceptor {
         }
 
         if (permissionId) {
-          const rolePermissions =
-            await this.prismaService.rolePermission.findMany({
-              where: { permissionId },
-              select: { roleId: true },
-            });
-
-          const roleIds = rolePermissions.map((rp) => rp.roleId);
-          if (roleIds.length > 0) {
-            const userRoles = await this.prismaService.userRole.findMany({
-              where: { roleId: { in: roleIds } },
-              select: { userId: true },
-            });
-
-            for (const ur of userRoles) {
-              await this.redisService.del(
-                `${PERMISSIONS_CACHE_KEY_PREFIX}${ur.userId}`,
-              );
-            }
-          }
+          await invalidatePermissionCache(
+            permissionId,
+            this.prismaService,
+            this.redisService,
+          );
         }
       }
     } catch (e) {
