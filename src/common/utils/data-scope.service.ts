@@ -1,10 +1,33 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, ForbiddenException } from '@nestjs/common';
 import { DataScope } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { Request } from 'express';
 
 @Injectable()
 export class DataScopeService {
   constructor(private prismaService: PrismaService) {}
+
+  validateTenantConsistency(req: Request, currentTenantId: string): void {
+    const tenantIdsFromRequest: string[] = [];
+
+    if (req.params && req.params.tenantId) {
+      tenantIdsFromRequest.push(req.params.tenantId);
+    }
+
+    if (req.query && req.query.tenantId) {
+      tenantIdsFromRequest.push(req.query.tenantId as string);
+    }
+
+    if (req.body && req.body.tenantId) {
+      tenantIdsFromRequest.push(req.body.tenantId);
+    }
+
+    for (const tid of tenantIdsFromRequest) {
+      if (tid !== currentTenantId) {
+        throw new ForbiddenException('租户隔离校验失败，无权访问其他租户数据');
+      }
+    }
+  }
 
   async getDepartmentIdsWithScope(
     departmentId: string | null,

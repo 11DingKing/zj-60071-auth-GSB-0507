@@ -1,13 +1,15 @@
-import { Injectable, NestMiddleware, UnauthorizedException } from '@nestjs/common';
+import { Injectable, NestMiddleware } from '@nestjs/common';
 import { Request, Response, NextFunction } from 'express';
 import { JwtService } from '@nestjs/jwt';
 import { PrismaService } from '../prisma/prisma.service';
+import { DataScopeService } from '../utils/data-scope.service';
 
 @Injectable()
 export class TenantMiddleware implements NestMiddleware {
   constructor(
     private readonly jwtService: JwtService,
     private readonly prismaService: PrismaService,
+    private readonly dataScopeService: DataScopeService,
   ) {}
 
   async use(req: Request, res: Response, next: NextFunction) {
@@ -25,9 +27,7 @@ export class TenantMiddleware implements NestMiddleware {
             (req as any).tenantId = payload.tenantId;
           }
         }
-      } catch (e) {
-        // Token decode failed, proceed without tenantId
-      }
+      } catch (e) {}
     }
 
     const tenantCode = req.headers['x-tenant-code'] as string;
@@ -38,6 +38,11 @@ export class TenantMiddleware implements NestMiddleware {
       if (tenant && tenant.isEnabled) {
         (req as any).tenantId = tenant.id;
       }
+    }
+
+    const currentTenantId = (req as any).tenantId;
+    if (currentTenantId) {
+      this.dataScopeService.validateTenantConsistency(req, currentTenantId);
     }
 
     next();

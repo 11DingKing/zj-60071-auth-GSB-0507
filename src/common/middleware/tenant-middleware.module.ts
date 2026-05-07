@@ -3,6 +3,7 @@ import { JwtModule } from '@nestjs/jwt';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TenantMiddleware } from './tenant.middleware';
 import { PrismaModule } from '../prisma/prisma.module';
+import { DataScopeService } from '../utils/data-scope.service';
 
 @Module({
   imports: [
@@ -15,7 +16,7 @@ import { PrismaModule } from '../prisma/prisma.module';
       inject: [ConfigService],
     }),
   ],
-  providers: [TenantMiddleware],
+  providers: [TenantMiddleware, DataScopeService],
   exports: [TenantMiddleware],
 })
 export class TenantMiddlewareModule implements NestModule {

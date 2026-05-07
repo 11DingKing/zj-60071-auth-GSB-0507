@@ -50,4 +50,12 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
   async setex(key: string, seconds: number, value: string): Promise<void> {
     await this.redisClient.setex(key, seconds, value);
   }
+
+  async delByPattern(pattern: string): Promise<number> {
+    const keys = await this.redisClient.keys(pattern);
+    if (keys.length === 0) {
+      return 0;
+    }
+    return this.redisClient.del(...keys);
+  }
 }
