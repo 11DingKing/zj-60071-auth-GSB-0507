@@ -13,9 +13,7 @@ import { OperationLogModule } from './modules/operation-log/operation-log.module
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
 import { PermissionGuard } from './common/guards/permission.guard';
 import { OperationLogInterceptor } from './common/interceptors/operation-log.interceptor';
-import { PermissionCacheInvalidationInterceptor } from './common/interceptors/permission-cache-invalidation.interceptor';
 import { TenantMiddlewareModule } from './common/middleware/tenant-middleware.module';
-import { PermissionCacheService } from './common/utils/permission-cache.service';
 
 @Module({
   imports: [
@@ -34,7 +32,6 @@ import { PermissionCacheService } from './common/utils/permission-cache.service'
     OperationLogModule,
   ],
   providers: [
-    PermissionCacheService,
     {
       provide: APP_GUARD,
       useClass: JwtAuthGuard,
@@ -46,10 +43,6 @@ import { PermissionCacheService } from './common/utils/permission-cache.service'
     {
       provide: APP_INTERCEPTOR,
       useClass: OperationLogInterceptor,
-    },
-    {
-      provide: APP_INTERCEPTOR,
-      useClass: PermissionCacheInvalidationInterceptor,
     },
   ],
 })
